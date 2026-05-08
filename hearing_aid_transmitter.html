@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>HearLink — Live Speech Transmitter</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap');
+
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --border: #1e2230;
+    --accent: #00e5c8;
+    --accent2: #5b6aff;
+    --warn: #ff6b6b;
+    --text: #e8eaf0;
+    --muted: #5a6070;
+    --glow: 0 0 24px rgba(0,229,200,0.25);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-x: hidden;
+  }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,200,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,200,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrapper {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 420px;
+    padding: 24px 20px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-height: 100vh;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 8px;
+  }
+  .logo {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: var(--text);
+  }
+  .logo span { color: var(--accent); }
+  .bt-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 12px;
+  }
+  .bt-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.4s, box-shadow 0.4s;
+  }
+  .bt-dot.connected {
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    animation: pulse-dot 2s infinite;
+  }
+  @keyframes pulse-dot {
+    0%,100% { opacity:1; } 50% { opacity:0.4; }
+  }
+
+  /* Main orb */
+  .orb-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 0 10px;
+  }
+  .orb-ring {
+    position: relative;
+    width: 180px; height: 180px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .orb-ring svg.ring {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+    transform: rotate(-90deg);
+    transition: opacity 0.3s;
+  }
+  .orb-ring svg.ring circle {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-dasharray: 502;
+    stroke-dashoffset: 502;
+    transition: stroke-dashoffset 0.1s linear;
+    filter: drop-shadow(0 0 4px var(--accent));
+  }
+  .orb-btn {
+    width: 130px; height: 130px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 8px;
+    font-family: 'Syne', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    transition: all 0.3s cubic-bezier(0.175,0.885,0.32,1.275);
+    background: var(--surface);
+    color: var(--muted);
+    border: 2px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .orb-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 30%, rgba(0,229,200,0.08), transparent 70%);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .orb-btn:hover::before { opacity: 1; }
+  .orb-btn.active {
+    background: radial-gradient(circle at 50% 30%, rgba(0,229,200,0.15), var(--surface));
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: var(--glow), inset 0 0 20px rgba(0,229,200,0.05);
+    animation: orb-breathe 2s ease-in-out infinite;
+  }
+  @keyframes orb-breathe {
+    0%,100% { box-shadow: var(--glow), inset 0 0 20px rgba(0,229,200,0.05); }
+    50% { box-shadow: 0 0 40px rgba(0,229,200,0.4), inset 0 0 30px rgba(0,229,200,0.1); }
+  }
+  .orb-icon { font-size: 32px; line-height: 1; }
+  .orb-label { font-size: 11px; }
+
+  .status-text {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+    text-align: center;
+    min-height: 18px;
+    transition: color 0.3s;
+  }
+  .status-text.live { color: var(--accent); }
+
+  /* Waveform */
+  .waveform-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .card-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  #waveCanvas {
+    width: 100%;
+    height: 60px;
+    display: block;
+    border-radius: 8px;
+    background: var(--bg);
+  }
+
+  /* Volume meter */
+  .vol-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .vol-label { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); min-width: 28px; }
+  .vol-bar-bg {
+    flex: 1;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .vol-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 3px;
+    transition: width 0.05s linear;
+    box-shadow: 0 0 8px var(--accent);
+  }
+  .vol-val {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    min-width: 30px;
+    text-align: right;
+  }
+
+  /* Controls panel */
+  .controls-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .control-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .ctrl-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+  }
+  .ctrl-sub {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  /* Toggle switch */
+  .toggle {
+    position: relative;
+    width: 44px; height: 24px;
+    flex-shrink: 0;
+  }
+  .toggle input { opacity:0; width:0; height:0; }
+  .toggle-track {
+    position: absolute;
+    inset: 0;
+    background: var(--border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+  .toggle input:checked + .toggle-track { background: var(--accent); }
+  .toggle-track::after {
+    content: '';
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 18px; height: 18px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.3s cubic-bezier(0.175,0.885,0.32,1.275);
+  }
+  .toggle input:checked + .toggle-track::after { transform: translateX(20px); }
+
+  /* Slider */
+  .ctrl-slider-wrap { display: flex; align-items: center; gap: 10px; }
+  .ctrl-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    outline: none;
+    cursor: pointer;
+  }
+  .ctrl-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    cursor: pointer;
+  }
+  .ctrl-slider-val {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    min-width: 36px;
+    text-align: right;
+  }
+
+  /* Stats row */
+  .stats-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+  .stat-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .stat-val {
+    font-family: 'DM Mono', monospace;
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--accent);
+  }
+  .stat-lbl {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    text-align: center;
+  }
+
+  /* BT connect button */
+  .bt-connect-btn {
+    width: 100%;
+    padding: 15px;
+    border-radius: 12px;
+    border: 1.5px solid var(--accent2);
+    background: rgba(91,106,255,0.08);
+    color: var(--accent2);
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  .bt-connect-btn:hover, .bt-connect-btn:active {
+    background: rgba(91,106,255,0.2);
+    box-shadow: 0 0 20px rgba(91,106,255,0.3);
+  }
+  .bt-connect-btn.connected-state {
+    border-color: var(--accent);
+    background: rgba(0,229,200,0.08);
+    color: var(--accent);
+  }
+
+  /* Log */
+  .log-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 14px 16px;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+  .log-card::-webkit-scrollbar { width: 3px; }
+  .log-card::-webkit-scrollbar-track { background: transparent; }
+  .log-card::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .log-line {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    line-height: 1.8;
+  }
+  .log-line.ok { color: var(--accent); }
+  .log-line.err { color: var(--warn); }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    padding-bottom: 10px;
+    letter-spacing: 0.5px;
+  }
+
+  /* Notification toast */
+  .toast {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 20px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--text);
+    z-index: 100;
+    transition: transform 0.4s cubic-bezier(0.175,0.885,0.32,1.275);
+    white-space: nowrap;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 360px) {
+    .orb-btn { width: 110px; height: 110px; }
+    .orb-ring { width: 155px; height: 155px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">Hear<span>Link</span></div>
+    <div class="bt-badge">
+      <div class="bt-dot" id="btDot"></div>
+      <span id="btBadgeText">Not connected</span>
+    </div>
+  </div>
+
+  <!-- Orb -->
+  <div class="orb-container">
+    <div class="orb-ring">
+      <svg class="ring" viewBox="0 0 180 180">
+        <circle cx="90" cy="90" r="80" id="ringCircle"/>
+      </svg>
+      <button class="orb-btn" id="mainBtn" onclick="toggleTransmit()">
+        <div class="orb-icon" id="orbIcon">🎙️</div>
+        <div class="orb-label" id="orbLabel">TAP TO START</div>
+      </button>
+    </div>
+    <div class="status-text" id="statusText">Ready — waiting for input</div>
+  </div>
+
+  <!-- Waveform -->
+  <div class="waveform-card">
+    <div class="card-label">Live Waveform</div>
+    <canvas id="waveCanvas"></canvas>
+    <div class="vol-row">
+      <div class="vol-label">VOL</div>
+      <div class="vol-bar-bg"><div class="vol-bar-fill" id="volFill"></div></div>
+      <div class="vol-val" id="volVal">0 dB</div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-box">
+      <div class="stat-val" id="statLatency">—</div>
+      <div class="stat-lbl">Latency</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="statRate">—</div>
+      <div class="stat-lbl">Sample Rate</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="statTime">0:00</div>
+      <div class="stat-lbl">Duration</div>
+    </div>
+  </div>
+
+  <!-- Bluetooth Connect -->
+  <button class="bt-connect-btn" id="btBtn" onclick="connectBluetooth()">
+    <span>📶</span> Connect Hearing Aid via Bluetooth
+  </button>
+
+  <!-- Controls -->
+  <div class="controls-card">
+    <div class="card-label">Audio Settings</div>
+
+    <div class="control-row">
+      <div>
+        <div class="ctrl-name">Amplify Input</div>
+        <div class="ctrl-sub">Boost microphone gain</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="ampToggle" checked onchange="updateGain()">
+        <div class="toggle-track"></div>
+      </label>
+    </div>
+
+    <div class="control-row" style="flex-direction:column; align-items:stretch;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="ctrl-name">Gain Level</div>
+        <div class="ctrl-slider-val" id="gainVal">1.5×</div>
+      </div>
+      <input type="range" class="ctrl-slider" id="gainSlider" min="1" max="4" step="0.1" value="1.5"
+        oninput="document.getElementById('gainVal').textContent=parseFloat(this.value).toFixed(1)+'×'; updateGain()">
+    </div>
+
+    <div class="control-row">
+      <div>
+        <div class="ctrl-name">Noise Suppression</div>
+        <div class="ctrl-sub">Browser-level noise filter</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="noiseToggle" checked>
+        <div class="toggle-track"></div>
+      </label>
+    </div>
+
+    <div class="control-row">
+      <div>
+        <div class="ctrl-name">Echo Cancellation</div>
+        <div class="ctrl-sub">Prevents feedback loop</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="echoToggle" checked>
+        <div class="toggle-track"></div>
+      </label>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="log-card" id="logBox">
+    <div class="log-line">[ system ] HearLink v1.0 initialised</div>
+    <div class="log-line">[ system ] Web Audio API ready</div>
+    <div class="log-line">[ bluetooth ] Use button above to pair hearing aid</div>
+  </div>
+
+  <div class="footer">HearLink · Uses Web Audio + Web Bluetooth API · HTTPS required</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+let audioCtx = null;
+let sourceNode = null;
+let gainNode = null;
+let analyser = null;
+let mediaStream = null;
+let isTransmitting = false;
+let btDevice = null;
+let startTime = null;
+let timerInterval = null;
+let animFrame = null;
+let ringMax = 502; // stroke-dasharray
+
+// ─── Canvas setup ────────────────────────────────────────────────────────────
+const canvas = document.getElementById('waveCanvas');
+const canvasCtx = canvas.getContext('2d');
+function resizeCanvas() {
+  canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+  canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+  canvasCtx.scale(window.devicePixelRatio, window.devicePixelRatio);
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// ─── Log helper ──────────────────────────────────────────────────────────────
+function log(msg, type='') {
+  const box = document.getElementById('logBox');
+  const el = document.createElement('div');
+  el.className = 'log-line ' + type;
+  const t = new Date().toLocaleTimeString('en-GB',{hour12:false});
+  el.textContent = `[ ${t} ] ${msg}`;
+  box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ─── Bluetooth ───────────────────────────────────────────────────────────────
+async function connectBluetooth() {
+  if (!navigator.bluetooth) {
+    log('Web Bluetooth not supported on this browser/device', 'err');
+    showToast('⚠️ Web Bluetooth not supported here');
+    return;
+  }
+  try {
+    log('Scanning for Bluetooth audio devices…');
+    btDevice = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: ['battery_service', 'device_information']
+    });
+    const name = btDevice.name || 'Unknown Device';
+    log(`Connected: ${name}`, 'ok');
+    showToast(`✅ Paired: ${name}`);
+    document.getElementById('btDot').classList.add('connected');
+    document.getElementById('btBadgeText').textContent = name.length > 14 ? name.slice(0,14)+'…' : name;
+    const btn = document.getElementById('btBtn');
+    btn.classList.add('connected-state');
+    btn.innerHTML = `<span>✅</span> ${name} — Connected`;
+
+    btDevice.addEventListener('gattserverdisconnected', () => {
+      document.getElementById('btDot').classList.remove('connected');
+      document.getElementById('btBadgeText').textContent = 'Disconnected';
+      btn.classList.remove('connected-state');
+      btn.innerHTML = `<span>📶</span> Connect Hearing Aid via Bluetooth`;
+      log('Bluetooth device disconnected', 'err');
+      btDevice = null;
+    });
+  } catch(e) {
+    if (e.name !== 'NotFoundError') {
+      log('Bluetooth error: ' + e.message, 'err');
+    } else {
+      log('Bluetooth pairing cancelled');
+    }
+  }
+}
+
+// ─── Main transmit toggle ─────────────────────────────────────────────────────
+async function toggleTransmit() {
+  if (!isTransmitting) {
+    await startTransmit();
+  } else {
+    stopTransmit();
+  }
+}
+
+async function startTransmit() {
+  try {
+    const noise = document.getElementById('noiseToggle').checked;
+    const echo  = document.getElementById('echoToggle').checked;
+
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        noiseSuppression: noise,
+        echoCancellation: echo,
+        autoGainControl: false,
+        sampleRate: 48000
+      }
+    });
+
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+    await audioCtx.resume();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+    gainNode = audioCtx.createGain();
+    sourceNode = audioCtx.createMediaStreamSource(mediaStream);
+    updateGain();
+
+    // Route: mic → gain → analyser → speakers
+    // (the browser's audio output goes to the BT device set as system audio)
+    sourceNode.connect(gainNode);
+    gainNode.connect(analyser);
+    gainNode.connect(audioCtx.destination); // → Bluetooth hearing aid output
+
+    isTransmitting = true;
+    startTime = Date.now();
+
+    // UI
+    document.getElementById('mainBtn').classList.add('active');
+    document.getElementById('orbIcon').textContent = '🔴';
+    document.getElementById('orbLabel').textContent = 'LIVE';
+    document.getElementById('statusText').textContent = 'Transmitting live to hearing aid…';
+    document.getElementById('statusText').classList.add('live');
+    document.getElementById('statRate').textContent = '48kHz';
+    document.getElementById('statLatency').textContent = '~20ms';
+
+    timerInterval = setInterval(updateTimer, 1000);
+    drawWaveform();
+    log('Microphone open — transmitting audio', 'ok');
+    showToast('🎙️ Live transmission started');
+    if (!btDevice) log('Tip: Pair your hearing aid via Bluetooth button above');
+  } catch(e) {
+    log('Mic error: ' + e.message, 'err');
+    showToast('⚠️ Microphone access denied');
+  }
+}
+
+function stopTransmit() {
+  if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  isTransmitting = false;
+
+  document.getElementById('mainBtn').classList.remove('active');
+  document.getElementById('orbIcon').textContent = '🎙️';
+  document.getElementById('orbLabel').textContent = 'TAP TO START';
+  document.getElementById('statusText').textContent = 'Stopped — tap orb to resume';
+  document.getElementById('statusText').classList.remove('live');
+  document.getElementById('statRate').textContent = '—';
+  document.getElementById('statLatency').textContent = '—';
+  document.getElementById('volFill').style.width = '0%';
+  document.getElementById('volVal').textContent = '0 dB';
+  document.getElementById('ringCircle').style.strokeDashoffset = ringMax;
+
+  const w = canvas.offsetWidth, h = canvas.offsetHeight;
+  canvasCtx.clearRect(0,0,w,h);
+  log('Transmission stopped');
+  showToast('⏹️ Transmission stopped');
+}
+
+function updateGain() {
+  if (!gainNode) return;
+  const amp = document.getElementById('ampToggle').checked;
+  const val = parseFloat(document.getElementById('gainSlider').value);
+  gainNode.gain.setTargetAtTime(amp ? val : 1.0, audioCtx.currentTime, 0.01);
+}
+
+function updateTimer() {
+  const secs = Math.floor((Date.now() - startTime) / 1000);
+  const m = Math.floor(secs/60), s = secs%60;
+  document.getElementById('statTime').textContent = `${m}:${s.toString().padStart(2,'0')}`;
+}
+
+// ─── Waveform & volume ────────────────────────────────────────────────────────
+function drawWaveform() {
+  if (!analyser) return;
+  animFrame = requestAnimationFrame(drawWaveform);
+  const bufLen = analyser.frequencyBinCount;
+  const dataArr = new Uint8Array(bufLen);
+  analyser.getByteTimeDomainData(dataArr);
+
+  const W = canvas.offsetWidth, H = canvas.offsetHeight;
+  canvasCtx.clearRect(0,0,W,H);
+
+  // Waveform line
+  canvasCtx.beginPath();
+  canvasCtx.strokeStyle = '#00e5c8';
+  canvasCtx.lineWidth = 1.5;
+  canvasCtx.shadowColor = '#00e5c8';
+  canvasCtx.shadowBlur = 6;
+  const sliceW = W / bufLen;
+  let x = 0;
+  for (let i = 0; i < bufLen; i++) {
+    const v = dataArr[i] / 128.0;
+    const y = v * H / 2;
+    if (i === 0) canvasCtx.moveTo(x, y);
+    else canvasCtx.lineTo(x, y);
+    x += sliceW;
+  }
+  canvasCtx.stroke();
+  canvasCtx.shadowBlur = 0;
+
+  // Volume RMS
+  let sum = 0;
+  for (let i = 0; i < bufLen; i++) {
+    const v = (dataArr[i]-128)/128;
+    sum += v*v;
+  }
+  const rms = Math.sqrt(sum/bufLen);
+  const db = 20*Math.log10(rms+1e-6);
+  const normVol = Math.min(1, Math.max(0, (db+60)/60));
+  document.getElementById('volFill').style.width = (normVol*100)+'%';
+  document.getElementById('volVal').textContent = Math.round(db)+' dB';
+
+  // Ring
+  const offset = ringMax - (ringMax * normVol);
+  document.getElementById('ringCircle').style.strokeDashoffset = offset;
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  resizeCanvas();
+  // Check HTTPS
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+    log('WARNING: HTTPS required for mic + Bluetooth access', 'err');
+    showToast('⚠️ Open via HTTPS for full access');
+  }
+});
+</script>
+</body>
+</html>
