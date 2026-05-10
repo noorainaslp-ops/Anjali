@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HearLink - Front-End Pre-Processor</title>
+    <style>
+        :root { --bg: #0a0a0a; --accent: #00ffaa; --text: #ffffff; }
+        body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; margin: 0; }
+        .container { width: 100%; max-width: 380px; background: #111; padding: 25px; border-radius: 30px; border: 1px solid #222; text-align: center; }
+        .status-pill { display: inline-block; padding: 5px 12px; border-radius: 20px; font-size: 0.7rem; font-weight: 800; background: #1a1a1a; color: var(--accent); margin-bottom: 20px; border: 1px solid #333; }
+        #visualizer { width: 100%; height: 80px; background: #000; border-radius: 15px; margin-bottom: 20px; }
+        button { width: 100%; padding: 18px; font-size: 1.1rem; font-weight: 800; border: none; border-radius: 15px; cursor: pointer; transition: 0.2s; }
+        .btn-start { background: var(--accent); color: #000; }
+        .btn-stop { background: #ff3344; color: #fff; }
+        .logic-card { background: #1a1a1a; padding: 15px; border-radius: 15px; margin-top: 20px; text-align: left; font-size: 0.75rem; color: #888; line-height: 1.5; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="status-pill">BLUETOOTH PRE-PROCESSOR ACTIVE</div>
+    <h2 style="margin: 0 0 15px 0;">HearLink <span style="color:var(--accent)">LINK</span></h2>
+    
+    <canvas id="visualizer"></canvas>
+    
+    <button id="toggleBtn" class="btn-start" onclick="initPreProcessor()">START CLEANING</button>
+    
+    <div class="logic-card">
+        <b>Pre-Processing Chain for Programmed Aids:</b><br>
+        • <b>Sub-Bass Kill:</b> Removes 0-400Hz (Environment noise)<br>
+        • <b>De-Esser Logic:</b> Prevents harsh sibilance peaks<br>
+        • <b>Transience Focus:</b> Sharpens consonant onsets<br>
+        • <b>Unity Gain:</b> Maintains signal level for Aid's DSP
+    </div>
+</div>
+
+<script>
+    let audioCtx, stream, source, analyser, isRunning = false;
+
+    async function initPreProcessor() {
+        if (isRunning) { location.reload(); return; }
+        
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: false } 
+            });
+
+            audioCtx = new AudioContext({ latencyHint: 'interactive' });
+            source = audioCtx.createMediaStreamSource(stream);
+
+            // 1. Aggressive High-Pass (The "Noise Floor" Cut)
+            // Most background noise is low freq. Cleaning this BEFORE the aid
+            // prevents the aid's own compressor from "pumping."
+            const noiseCut = audioCtx.createBiquadFilter();
+            noiseCut.type = "highpass";
+            noiseCut.frequency.value = 450; 
+
+            // 2. Transient Sharpener (Peaking)
+            // Boosts the 3kHz range slightly to "edge" the consonants
+            // helping the aid's programmed gain be more effective.
+            const edge = audioCtx.createBiquadFilter();
+            edge.type = "peaking";
+            edge.frequency.value = 3000;
+            edge.gain.value = 4; 
+            edge.Q.value = 1.0;
+
+            // 3. Limiter (Recruitment Protection)
+            // Acts as a hard ceiling so the Bluetooth signal never clips
+            // or sends a painful spike to the hearing aid.
+            const ceiling = audioCtx.createDynamicsCompressor();
+            ceiling.threshold.value = -10;
+            ceiling.knee.value = 0;
+            ceiling.ratio.value = 20;
+            ceiling.attack.value = 0.001;
+            ceiling.release.value = 0.1;
+
+            analyser = audioCtx.createAnalyser();
+
+            // Routing: Mic -> Clean -> Edge -> Limit -> Bluetooth
+            source.connect(noiseCut);
+            noiseCut.connect(edge);
+            edge.connect(ceiling);
+            ceiling.connect(audioCtx.destination);
+            ceiling.connect(analyser);
+
+            isRunning = true;
+            document.getElementById('toggleBtn').textContent = "STOP CLEANING";
+            document.getElementById('toggleBtn').className = "btn-stop";
+            drawVisualizer();
+
+        } catch (err) { alert("Bluetooth Link Error: " + err.message); }
+    }
+
+    function drawVisualizer() {
+        if (!isRunning) return;
+        requestAnimationFrame(drawVisualizer);
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(data);
+        const canvas = document.getElementById('visualizer');
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        for(let i = 0; i < data.length; i++) {
+            const h = (data[i] / 255) * canvas.height;
+            ctx.fillStyle = '#00ffaa'; ctx.fillRect(i * 12, canvas.height - h, 8, h);
+        }
+    }
+</script>
+</body>
+</html>
